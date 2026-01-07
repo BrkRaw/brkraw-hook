@@ -1,0 +1,36 @@
+__meta__:
+  name: "template_info"
+  version: "0.1.0"
+  description: "Information spec for the template hook example."
+  category: "info_spec"
+  transforms_source: "../transforms/template.py"
+
+SequenceName:
+  sources:
+    - file: method
+      key: Method
+  transform: strip_enclosed
+
+StudyDescription:
+  sources:
+    - file: method
+      key: StudyDescription
+  transform: strip_enclosed
+
+NumAverage:
+  sources:
+    - file: method
+      key: NumAverage
+  transform: first_value
+
+EchoTime (ms):
+  sources:
+    - file: method
+      key: EchoTime
+  transform: first_value
+
+RepetitionTime (ms):
+  sources:
+    - file: method
+      key: RepetitionTime
+  transform: first_value

@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "brkraw-hook-template"
+version = "0.1.0"
+description = "Template project for creating BrkRaw converter hooks with rule/spec/transform scaffolding."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+  {name = "BrkRaw contributors"}
+]
+dependencies = [
+  "brkraw"
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest",
+  "pyyaml"
+]
+
+[project.entry-points."brkraw.converter_hook"]
+template = "brkraw_hook_template.hook:HOOK"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["brkraw_hook_template"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+brkraw_hook_template = [
+  "brkraw_hook.yaml",
+  "docs/*.md",
+  "rules/*.yaml",
+  "specs/*.yaml",
+  "transforms/*.py",
+]

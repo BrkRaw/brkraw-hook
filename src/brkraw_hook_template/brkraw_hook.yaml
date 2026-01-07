@@ -1,0 +1,8 @@
+docs: docs/hook.md
+specs:
+  - specs/info_template.yaml
+  - specs/metadata_template.yaml
+rules:
+  - rules/template_rule.yaml
+transforms:
+  - transforms/template.py

@@ -1,0 +1,36 @@
+__meta__:
+  name: "template_metadata"
+  version: "0.1.0"
+  description: "Metadata spec for outputs produced by the template hook."
+  category: "metadata_spec"
+  transforms_source: "../transforms/template.py"
+
+SequenceName:
+  sources:
+    - file: method
+      key: Method
+  transform: strip_enclosed
+
+Manufacturer:
+  inputs:
+    value:
+      const: "TemplateVendor"
+  transform: value_only
+
+EchoTime:
+  sources:
+    - file: method
+      key: EchoTime
+  transform: ms_to_s
+
+RepetitionTime:
+  sources:
+    - file: method
+      key: RepetitionTime
+  transform: ms_to_s
+
+EstimatedDwellTime:
+  inputs:
+    value:
+      const: 1.0
+  transform: value_only

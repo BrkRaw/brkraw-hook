@@ -1,0 +1,35 @@
+info_spec:
+  - name: "template-info"
+    description: "Info spec for template-style datasets."
+    when:
+      method:
+        sources:
+          - file: method
+            key: Method
+    if:
+      regex: ["$method", "(?i)TEMPLATE"]
+    use: "specs/info_template.yaml"
+
+metadata_spec:
+  - name: "template-metadata"
+    description: "Metadata spec for template outputs."
+    when:
+      method:
+        sources:
+          - file: method
+            key: Method
+    if:
+      regex: ["$method", "(?i)TEMPLATE"]
+    use: "specs/metadata_template.yaml"
+
+converter_hook:
+  - name: "template"
+    description: "Stub hook that shows how to wire a converter." 
+    when:
+      method:
+        sources:
+          - file: method
+            key: Method
+    if:
+      regex: ["$method", "(?i)TEMPLATE"]
+    use: "template"
