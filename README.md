@@ -1,21 +1,27 @@
 # BrkRaw Hook Template
 
-## Instruction
+This repository is a template for implementing a BrkRaw dataset hook (rules/specs/transforms + Python hook entry points).
+
+## Maintainer workflow (developers)
 - Copy this template into a new repository, then update `pyproject.toml` metadata (name, entry point, dependencies) before publishing to PyPI.
-- Define the dataset-specific hook inside `src/brkraw_hook_template/hook.py`, returning `(dataobj, order, metadata)` once the rule/spec layer has validated the scan.
-- Declare the hook assets in `src/brkraw_hook_template/brkraw_hook.yaml`, point to user-oriented docs in `docs/`, rules in `rules/`, specs in `specs/`, and transforms in `transforms/`.
-- Use the docs in `src/brkraw_hook_template/docs/` as an example for explaining the hook's scope, the rule/spec/transform flow, and any conversion notes.
-- Avoid switching to hatchling (or other hatch-based backends) in `build-backend` because BrkRaw still has buggy file-fetching paths when hooks rely on hatch installers; stick with `setuptools`/`wheel` as configured here.
-- Developer support extras: `.vscode/tasks.json` includes release-oriented task placeholders, `.github/workflows/` includes CI/publish placeholders, and `tests/` includes a minimal hook install test so maintainers can validate hook integration in CI.
+- Implement the dataset-specific hook in `src/brkraw_hook_template/hook.py`. BrkRaw expects a `HOOK` dict that exposes `get_dataobj` and `get_affine` (and optionally `convert` for a richer workflow).
+- Declare hook assets in `src/brkraw_hook_template/brkraw_hook.yaml`, which references package-local directories like `src/brkraw_hook_template/docs/`, `src/brkraw_hook_template/rules/`, `src/brkraw_hook_template/specs/`, and `src/brkraw_hook_template/transforms/`.
+- Use `src/brkraw_hook_template/docs/` as a writing template: define scope, document the rule/spec/transform flow, and record conversion notes and limitations.
+- Keep `build-backend` on `setuptools`/`wheel`. BrkRaw still has fragile file-fetch paths when hooks rely on hatch-based installers.
+- Optional maintainer tooling: `.vscode/tasks.json` contains release task placeholders, `.github/workflows/` contains CI/publish placeholders, and `tests/` contains a minimal hook install test.
 
-## Hook workflow
-- Load a dataset via `from brkraw import load` (see `brkraw/src/brkraw/__init__.py`). The loader exposes `get_scan(scan_id)` so you always work with BrkRaw `Scan` objects when populating metadata or producing outputs.
-- Implement `get_dataobj(scan, **kwargs)` and `get_affine(scan, **kwargs)` inside your hook module. BrkRaw calls those helpers directly during conversion, so they should return the same data types the CLI expects (e.g., numpy arrays or tuples of arrays). When a conversion demands multi-stage processing (trajectory reconstruction, RSS combination, caching, etc.), wrap that logic in `convert(scan, metadata, **kwargs)` and keep it available for callers that need the extra workflow.
-- Accept `**kwargs` throughout your helpers. `brkraw convert` (see `brkraw/src/brkraw/cli/commands/convert.py`) forwards CLI `--hook-arg name:key=value` into `loader.convert(..., hook_args_by_name={...})`, which eventually supplies the same dictionary to `scan.convert(...)` and to your hook functions. That lets you expose options like `--hook-arg template:offset=5` without hardcoding CLI bindings.
-- Keep `rules/*.yaml` focused on detection logic, `specs/*.yaml` on metadata mapping, and `transforms/*.py` on sanitisation helpers. Document reusable transforms inside `docs/` (see `docs/rule_spec_transform.md`) and reference them in your AI prompts so collaborators understand the flow.
+## Hook architecture and data flow
+- BrkRaw loads datasets via `from brkraw import load` (see `brkraw/src/brkraw/__init__.py`). The loader exposes `get_scan(scan_id)`; hook code should operate on BrkRaw `Scan` objects.
+- `get_dataobj(scan, **kwargs)` and `get_affine(scan, **kwargs)` are called during conversion and should return the CLI-compatible types (typically numpy arrays, or tuples of arrays).
+- If conversion is multi-stage (trajectory reconstruction, RSS, caching, etc.), implement `convert(scan, metadata, **kwargs)` and expose it via `HOOK` so callers can opt into the richer workflow.
+- Always accept `**kwargs`. `brkraw convert` (see `brkraw/src/brkraw/cli/commands/convert.py`) forwards `--hook-arg name:key=value` into `hook_args_by_name={...}` and ultimately into your hook functions (e.g., `--hook-arg template:offset=5`).
+- Keep responsibilities separated: `rules/*.yaml` for detection/routing, `specs/*.yaml` for metadata mapping, `transforms/*.py` for sanitisation helpers. Document shared transforms in `src/brkraw_hook_template/docs/` (see `src/brkraw_hook_template/docs/rule_spec_transform.md`).
 
-## AI friendly prompt (with BrkRaw API)
-- When you iterate with an AI agent, point it to this repository (`git@github.com:BrkRaw/brkraw-hook.git`) and mention that BrkRaw loads scans via `load()` before invoking hooks. The core requirement is to expose a `HOOK` dict with `get_dataobj` and `get_affine` (plus `convert` if you need a custom workflow), just like `brkraw-mrs` or `brkraw-sordino`.
+## Working with an AI agent
+This section is for teams using an AI agent to help implement or extend a hook.
+
+- In your prompt, point the agent to this repository (`git@github.com:BrkRaw/brkraw-hook.git`) and to at least one real hook example (e.g., `brkraw-mrs` or `brkraw-sordino`).
+- Call out the non-negotiables: BrkRaw loads scans via `load()`, hook code should operate on `Scan`, and the hook must expose `HOOK = {'get_dataobj': ..., 'get_affine': ...}` (plus `convert` if needed).
 
   ```python
   from brkraw import load
@@ -27,12 +33,12 @@
   affine = scan.get_affine(reco_id=1)
   ```
 
-- This clarifies that AI-generated code should operate on `Scan` objects, implement `get_dataobj`/`get_affine`, and optionally expose a richer `convert` workflow that consumes kwargs from `hook_args_by_name`. Mention the repo URL so the model can inspect the template structure and docs, and prompt it to add dataset-specific options tied to CLI `--hook-arg` keys.
-- Example prompt for AI: `"Use git@github.com:BrkRaw/brkraw-hook.git as the base hook. Mimic brkraw-mrs: build HOOK={'get_dataobj': ..., 'get_affine': ..., 'convert': ...} in hook.py, parse a Scan from brkraw.load(...).get_scan(scan_id), and use hook args (from --hook-arg) to enable optional preprocessing. Provide rule/spec/transform files that match the detection logic, and include the actual convert() implementation code (not just a placeholder) that performs the intended conversion."`
+- Tell the agent to wire options through `--hook-arg` (kwargs), not by inventing new CLI flags. Ask it to implement a real `convert()` (not a placeholder) when the workflow needs more than `get_dataobj`/`get_affine`.
+- Example prompt: `"Use git@github.com:BrkRaw/brkraw-hook.git as the base hook. Mimic brkraw-mrs: implement HOOK={'get_dataobj': ..., 'get_affine': ..., 'convert': ...} in hook.py, operate on Scan objects from brkraw.load(...).get_scan(scan_id), and use hook args (from --hook-arg) to enable optional preprocessing. Provide rule/spec/transform files that match the detection logic, and include a complete convert() implementation."`
 
-## Note
+## Notes
 - BrkRaw's file-fetch path is fragile in some scenarios, so keep data local to the hook package or repository instead of relying on fragile remote bootstrapping paths.
-- Rules should be the first line of defense: keep them focused on scan identifiers, modality flags, or Bruker sequence/method markers and then route to the right spec/hook.
+- Rules should be the first line of defense: keep them focused on scan identifiers, modality flags, or Bruker sequence/method markers, then route to the right spec/hook.
 - `info_spec` drives the BrkRaw info parser (what appears in `brkraw info`), while `metadata_spec` feeds `get_metadata` and sidecar generation. Both should map raw headers to BrkRaw metadata keys and call into `transforms/` helpers for sanitisation (trim strings, convert units, inject constants).
-- Document transforms that are shared between specs so future hooks can reuse them; check `docs/rule_spec_transform.md` for a general flow chart and template snippets.
+- Document transforms that are shared between specs so future hooks can reuse them; check `src/brkraw_hook_template/docs/rule_spec_transform.md` for a general flow chart and template snippets.
 - Tests should exercise the hook integration path (install the hook, ensure rules/specs/transforms register) rather than only unit-testing isolated helpers.
