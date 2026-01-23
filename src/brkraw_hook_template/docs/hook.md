@@ -27,8 +27,9 @@ brkraw convert /path/to/source --output /path/to/output
 ```
 
 Replace the stub conversion in `src/brkraw_hook_template/hook.py` with logic
-that reads `scan` attributes, builds the output array, and returns
-`(dataobj, order, metadata)`.
+that uses the provided `dataobj` and `affine` (or re-derives them) to produce
+a NIfTI image (e.g. `nibabel.Nifti1Image`) or a compatible object supporting
+`.to_filename()`.
 
 ## Rule / spec / transform example
 

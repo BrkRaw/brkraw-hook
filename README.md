@@ -12,33 +12,89 @@ This repository is a template for implementing a BrkRaw dataset hook (rules/spec
 
 ## Hook architecture and data flow
 - BrkRaw loads datasets via `from brkraw import load` (see `brkraw/src/brkraw/__init__.py`). The loader exposes `get_scan(scan_id)`; hook code should operate on BrkRaw `Scan` objects.
-- `get_dataobj(scan, **kwargs)` and `get_affine(scan, **kwargs)` are called during conversion and should return the CLI-compatible types (typically numpy arrays, or tuples of arrays).
-- If conversion is multi-stage (trajectory reconstruction, RSS, caching, etc.), implement `convert(scan, metadata, **kwargs)` and expose it via `HOOK` so callers can opt into the richer workflow.
+- `get_dataobj(scan, reco_id, **kwargs)` and `get_affine(scan, reco_id, space=..., **kwargs)` are called during conversion to resolve the raw data and spatial orientation.
+- If conversion requires custom NIfTI assembly or multi-stage processing, implement `convert(scan, dataobj, affine, **kwargs)` and expose it via `HOOK`. This function receives the outputs of `get_dataobj` and `get_affine` and should return a NIfTI image object (or anything supporting `.to_filename()`).
 - Always accept `**kwargs`. `brkraw convert` (see `brkraw/src/brkraw/cli/commands/convert.py`) forwards `--hook-arg name:key=value` into `hook_args_by_name={...}` and ultimately into your hook functions (e.g., `--hook-arg template:offset=5`).
 - Keep responsibilities separated: `rules/*.yaml` for detection/routing, `specs/*.yaml` for metadata mapping, `transforms/*.py` for sanitisation helpers. Document shared transforms in `src/brkraw_hook_template/docs/` (see `src/brkraw_hook_template/docs/rule_spec_transform.md`).
 
-## Working with an AI agent
-This section is for teams using an AI agent to help implement or extend a hook.
 
-- In your prompt, point the agent to this repository (`git@github.com:BrkRaw/brkraw-hook.git`) and to at least one real hook example (e.g., `brkraw-mrs` or `brkraw-sordino`).
-- Call out the non-negotiables: BrkRaw loads scans via `load()`, hook code should operate on `Scan`, and the hook must expose `HOOK = {'get_dataobj': ..., 'get_affine': ...}` (plus `convert` if needed).
+### Affine handling: match online reconstruction alignment
+
+If your hook exposes `get_affine`, do not "simplify" the API. Prefer a thin wrapper that forwards BrkRaw's full `get_affine()` signature so downstream users can request the correct coordinate space and apply subject overrides consistently.
+
+In particular, `get_affine` should accept and forward:
+
+* `space` ("raw" | "scanner" | "subject_ras")
+* `override_subject_type`, `override_subject_pose` (valid only for `space="subject_ras"`)
+* `decimals`
+* extra kwargs (for post-transforms like `flip_x/flip_y/flip_z`, `rad_x/rad_y/rad_z` if supported)
+
+Recommended practice:
+
+* **Do not invent a new affine resolver inside the hook.**
+* Instead, follow the reference implementation in the main BrkRaw repo:
+  `BrkRaw/brkraw -> src/brkraw/apps/loader/helper.py:get_affine`
+* The goal is to ensure the hook output is aligned the same way as **online reconstruction (2dseq)**.
+
+If you need a concrete validation pattern, see the example notebooks in `brkraw-sordino/notebooks` (they demonstrate how to sanity-check alignment against online recon outputs).
+
+
+
+## Working with an AI agent
+
+As AI-assisted development workflows continue to emerge, some contributors may choose to use AI agents when implementing or extending BrkRaw hooks.
+This section provides practical guidance on how to do so **without breaking BrkRaw's extension model or hook contract**.
+
+When prompting an AI agent, be explicit about the boundaries it must respect. In particular:
+
+* In your prompt, point the agent to the base hook repository (`git@github.com:BrkRaw/brkraw-hook.git`) and to at least one real, working hook (for example `brkraw-mrs` or `brkraw-sordino`).
+
+* Call out the non-negotiables: BrkRaw loads scans via `load()`, hook code must operate on `Scan` objects, and the hook must expose
+  `HOOK = {'get_dataobj': ..., 'get_affine': ...}` (and `convert` only if required).
 
   ```python
   from brkraw import load
 
   loader = load("/path/to/source")
   scan = loader.get_scan(scan_id)
+  # metadata resolution is usually handled via spec, not directly in the hook
   metadata = scan.get_metadata(reco_id=1)
   dataobj = scan.get_dataobj(reco_id=1)
   affine = scan.get_affine(reco_id=1)
   ```
 
-- Tell the agent to wire options through `--hook-arg` (kwargs), not by inventing new CLI flags. Ask it to implement a real `convert()` (not a placeholder) when the workflow needs more than `get_dataobj`/`get_affine`.
-- Example prompt: `"Use git@github.com:BrkRaw/brkraw-hook.git as the base hook. Mimic brkraw-mrs: implement HOOK={'get_dataobj': ..., 'get_affine': ..., 'convert': ...} in hook.py, operate on Scan objects from brkraw.load(...).get_scan(scan_id), and use hook args (from --hook-arg) to enable optional preprocessing. Provide rule/spec/transform files that match the detection logic, and include a complete convert() implementation."`
+* Make it clear that all hook options must be wired through `--hook-arg` (kwargs), not by inventing new CLI flags.
+
+* If the workflow requires more than `get_dataobj` and `get_affine`, explicitly ask the agent to implement a **real** `convert()` method, not a placeholder.
+
+A concrete example prompt that works well is:
+
+> "Use `git@github.com:BrkRaw/brkraw-hook.git` as the base hook. Mimic `brkraw-mrs`: implement
+> `HOOK = {'get_dataobj': ..., 'get_affine': ..., 'convert': ...}` in `hook.py`, operate on `Scan` objects from `brkraw.load(...).get_scan(scan_id)`, and use hook args (from `--hook-arg`) to enable optional preprocessing. Provide rule/spec/transform files that match the detection logic, and include a complete `convert()` implementation that returns a nibabel image."
+
 
 ## Notes
-- BrkRaw's file-fetch path is fragile in some scenarios, so keep data local to the hook package or repository instead of relying on fragile remote bootstrapping paths.
 - Rules should be the first line of defense: keep them focused on scan identifiers, modality flags, or Bruker sequence/method markers, then route to the right spec/hook.
 - `info_spec` drives the BrkRaw info parser (what appears in `brkraw info`), while `metadata_spec` feeds `get_metadata` and sidecar generation. Both should map raw headers to BrkRaw metadata keys and call into `transforms/` helpers for sanitisation (trim strings, convert units, inject constants).
 - Document transforms that are shared between specs so future hooks can reuse them; check `src/brkraw_hook_template/docs/rule_spec_transform.md` for a general flow chart and template snippets.
 - Tests should exercise the hook integration path (install the hook, ensure rules/specs/transforms register) rather than only unit-testing isolated helpers.
+
+### Affine handling: match online reconstruction alignment
+
+If your hook exposes `get_affine`, do not "simplify" the API. Prefer a thin wrapper that forwards BrkRaw's full `get_affine()` signature so downstream users can request the correct coordinate space and apply subject overrides consistently.
+
+In particular, `get_affine` should accept and forward:
+
+* `space` ("raw" | "scanner" | "subject_ras")
+* `override_subject_type`, `override_subject_pose` (valid only for `space="subject_ras"`)
+* `decimals`
+* extra kwargs (for post-transforms like `flip_x/flip_y/flip_z`, `rad_x/rad_y/rad_z` if supported)
+
+Recommended practice:
+
+* **Do not invent a new affine resolver inside the hook.**
+* Instead, follow the reference implementation in the main BrkRaw repo:
+  `BrkRaw/brkraw -> src/brkraw/apps/loader/helper.py:get_affine`
+* The goal is to ensure the hook output is aligned the same way as **online reconstruction (2dseq)**.
+
+If you need a concrete validation pattern, see the example notebooks in `brkraw-sordino/notebooks` (they demonstrate how to sanity-check alignment against online recon outputs).

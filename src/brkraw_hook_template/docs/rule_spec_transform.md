@@ -31,9 +31,9 @@ SequenceName:
 ```
 
 4. The `strip_enclosed` transform returns a trimmed string with angled brackets removed.
-5. Once the metadata dict is ready, BrkRaw calls `brkraw_hook_template.hook`, which
-   either reuses `first_value`, `ensure_list`, etc., or implements more complex
-   dimension inference.
+5. When `brkraw convert` runs, it calls the hook's `get_dataobj` and `get_affine`
+   functions to resolve data and orientation, and finally calls `convert` (if defined)
+   passing the resolved `dataobj` and `affine` to produce the final image.
 
 By keeping detection, sanitisation, and conversion distinct, the template
 remains readable and easy to extend.
